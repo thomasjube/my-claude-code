@@ -11,10 +11,10 @@
 	</parent>
 
 	<groupId>com.example</groupId>
-	<artifactId>demo</artifactId>
+	<artifactId>rubik-helper</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
-	<name>demo</name>
-	<description>Projet de démonstration Spring Boot</description>
+	<name>rubik-helper</name>
+	<description>Aide à la résolution des Rubik's cubes 2x2, 3x3 et 4x4 (F2L, OLL, PLL)</description>
 
 	<properties>
 		<java.version>21</java.version>

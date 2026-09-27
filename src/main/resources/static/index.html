@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="fr">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Rubik's Helper</title>
+	<meta name="description" content="Aide à la résolution des Rubik's cubes 2x2, 3x3 et 4x4 : F2L, OLL, PLL, parités.">
+	<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 3 3'%3E%3Crect width='3' height='3' fill='%23222'/%3E%3Cg fill='%23ffd500'%3E%3Crect x='.1' y='.1' width='.8' height='.8'/%3E%3Crect x='1.1' y='.1' width='.8' height='.8'/%3E%3Crect x='2.1' y='.1' width='.8' height='.8'/%3E%3C/g%3E%3Cg fill='%23009b48'%3E%3Crect x='.1' y='1.1' width='.8' height='.8'/%3E%3Crect x='1.1' y='1.1' width='.8' height='.8'/%3E%3Crect x='2.1' y='1.1' width='.8' height='.8'/%3E%3C/g%3E%3Cg fill='%23ff5800'%3E%3Crect x='.1' y='2.1' width='.8' height='.8'/%3E%3Crect x='1.1' y='2.1' width='.8' height='.8'/%3E%3Crect x='2.1' y='2.1' width='.8' height='.8'/%3E%3C/g%3E%3C/svg%3E">
+	<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+	<header class="topbar">
+		<a class="brand" href="#/3x3">
+			<span class="brand-mark" aria-hidden="true"></span>
+			<span>Rubik's Helper</span>
+		</a>
+		<nav class="tabs" id="tabs" aria-label="Cubes"></nav>
+	</header>
+	<main id="app" class="container" aria-live="polite">
+		<p class="muted">Chargement…</p>
+	</main>
+	<footer class="container footer muted">
+		Orientation de référence : <strong>jaune en haut, vert devant</strong>.
+		Notation : R U F L D B (faces), ' = anti-horaire, 2 = demi-tour, Rw / r = deux couches,
+		2R = deuxième tranche seule, M E S = tranches du milieu, x y z = rotations du cube.
+	</footer>
+	<script src="app.js"></script>
+</body>
+</html>
