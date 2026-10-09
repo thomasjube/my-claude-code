@@ -4,7 +4,7 @@ Variables par modèle : x (plein, données libres), y (moitié), s (source, mod�
 a (alias, copie entièrement sourcée), et par besoin des modèles « moitié » : d (données) / z (source).
 Les données sont agrégées en volume par type (libres / toutes), sans granularité des datasets.
 
-Usage : lp.py <instance.json> <plan.txt> [alias=0/1] [mip=secondes] [dslack=f]
+Usage : lp.py <instance.json> <plan.txt> [alias=0/1] [mip=secondes] [dslack=f] [freeslack=f] [threads=n]
 Le plan contient une ligne par modèle : id x y s a z_1 .. z_k (z = besoin sourcé, ordre des besoins)
 dslack réduit les volumes de données disponibles (marge pour la granularité des datasets).
 """
@@ -19,13 +19,14 @@ opts = dict(a.split("=") for a in sys.argv[3:])
 use_alias = opts.get("alias", "0") == "1"
 mip_time = float(opts.get("mip", "0"))
 dslack = float(opts.get("dslack", "0"))
+freeslack = float(opts.get("freeslack", "0"))
 M, D, cap = inst["models"], inst["datasets"], inst["energyCap"]
 N = len(M)
 S = [0.0] * 4; F = [0.0] * 4
 for d in D:
     t = TYPES.index(d["dataType"]); S[t] += d["size"]
     if not d["isCopyrighted"]: F[t] += d["size"]
-S = [v * (1 - dslack) for v in S]; F = [v * (1 - dslack) for v in F]
+S = [v * (1 - dslack) for v in S]; F = [v * (1 - dslack - freeslack) for v in F]
 
 h = highspy.Highs(); h.setOptionValue("output_flag", False)
 inf = highspy.kHighsInf
