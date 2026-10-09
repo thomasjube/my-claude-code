@@ -25,7 +25,11 @@ static vector<int> dsT, dsS, dsC;
 static double P_time = 60, P_wE = 1, P_wD = 0, P_wF = 0, P_wV = 0.5, P_theta = 1.0;
 static int P_alias = 0, P_sources = 1, P_seed = 1, P_pairLim = 400, P_srcTries = 30;
 static double P_kmin = 2, P_kmax = 20, P_T0 = -1, P_noise = 0.15;
-static string P_init, P_out;
+static string P_init, P_out, P_plan;
+static double P_planBoost = 20;
+// plan (solution MILP) : rôle prévu et besoins à sourcer
+static vector<char> planFull, planHalf, planSrc, planAlias;
+static vector<vector<char>> planZ;
 
 static mt19937_64 rng;
 static inline double urand() { return (rng() >> 11) * (1.0 / 9007199254740992.0); }
@@ -276,6 +280,7 @@ static bool tryInsert(int m, bool alias, int mode = 0) {
         bool feasibleData = !alias && r.U >= r.L;
         bool preferSrc = alias || !feasibleData ||
                          (P_sources && srcCostEst[r.t] < dataCost(r.t, r.L));
+        if (!alias && feasibleData && !planZ.empty() && (planHalf[m] || planFull[m])) preferSrc = planZ[m][i];
         bool done = false;
         for (int attempt = 0; attempt < 2 && !done; attempt++) {
             bool useSrc = (attempt == 0) ? preferSrc : !preferSrc;
@@ -341,8 +346,11 @@ static void computePriorities() {
         double best = 0;
         if (fullOk) best = max(best, val[m] / full);
         if (halfOk) best = max(best, (val[m] / 2) / half);
-        if (best > 0) cands.push_back({m, false, best});
-        if (P_alias && val[m] / 2 > 0 && srcOnly < 1e17) cands.push_back({m, true, (val[m] / 2) / srcOnly});
+        double boost = (!planFull.empty() && (planFull[m] || planHalf[m])) ? P_planBoost : 1.0;
+        double aboost = (!planAlias.empty() && planAlias[m]) ? P_planBoost : 1.0;
+        if (!planSrc.empty() && planSrc[m]) boost = 1.0 / P_planBoost;  // à garder comme source
+        if (best > 0) cands.push_back({m, false, best * boost});
+        if (P_alias && val[m] / 2 > 0 && srcOnly < 1e17) cands.push_back({m, true, (val[m] / 2) / srcOnly * aboost});
     }
 }
 
@@ -443,6 +451,8 @@ int main(int argc, char **argv) {
         else if (k == "T0") P_T0 = stod(v);
         else if (k == "noise") P_noise = stod(v);
         else if (k == "init") P_init = v;
+        else if (k == "plan") P_plan = v;
+        else if (k == "planBoost") P_planBoost = stod(v);
         else { fprintf(stderr, "option inconnue %s\n", k.c_str()); return 1; }
     }
     rng.seed(P_seed * 7919 + 17);
@@ -486,6 +496,22 @@ int main(int argc, char **argv) {
                     1e-3 * r.L / supplyT[r.t];
         srcList[r.t].push_back(m);
     }
+    if (!P_plan.empty()) {
+        planFull.assign(NM, 0); planHalf.assign(NM, 0); planSrc.assign(NM, 0); planAlias.assign(NM, 0);
+        planZ.assign(NM, {});
+        ifstream in(P_plan);
+        string line;
+        while (getline(in, line)) {
+            istringstream ls(line);
+            int id; double x, y, sv, a;
+            if (!(ls >> id >> x >> y >> sv >> a)) continue;
+            planFull[id] = x > 0.5; planHalf[id] = y > 0.5; planSrc[id] = sv > 0.5; planAlias[id] = a > 0.5;
+            double z;
+            while (ls >> z) planZ[id].push_back(z > 0.5);
+        }
+        // sources prévues : en tête de liste
+        for (int m = 0; m < NM; m++) if (planSrc[m] && single[m] >= 0) srcKey[m] -= 1e6;
+    }
     for (int t = 0; t < 4; t++)
         sort(srcList[t].begin(), srcList[t].end(), [](int a, int b) { return srcKey[a] < srcKey[b]; });
 
@@ -500,6 +526,25 @@ int main(int argc, char **argv) {
     for (int i = 0; i < (int)cands.size(); i++) (cands[i].alias ? candOfAlias : candOfModel)[cands[i].m] = i;
 
     if (!P_init.empty()) loadSolution(P_init);
+    if (!planFull.empty() && P_init.empty()) {
+        // construction du plan : pleins (gros besoins d'abord), puis moitiés, puis alias
+        auto need = [](int m) { ll s = 0; for (auto &r : reqs[m]) s += r.L; return s; };
+        vector<int> fulls, halves, aliases;
+        for (int m = 0; m < NM; m++) {
+            if (planFull[m]) fulls.push_back(m);
+            else if (planHalf[m]) halves.push_back(m);
+            if (planAlias[m]) aliases.push_back(m);
+        }
+        auto byNeed = [&](vector<int> &v) { sort(v.begin(), v.end(), [&](int a, int b) { return need(a) > need(b); }); };
+        byNeed(fulls); byNeed(halves);
+        int okF = 0, okH = 0, okA = 0;
+        for (int m : fulls) okF += tryInsert(m, false, 1);
+        for (int m : halves) okH += tryInsert(m, false, 2);
+        for (int m : aliases) okA += tryInsert(m, true, 2);
+        fprintf(stderr, "plan : pleins %d/%zu, moitiés %d/%zu, alias %d/%zu -> valeur %lld énergie %.4f\n", okF,
+                fulls.size(), okH, halves.size(), okA, aliases.size(), curValue, (double)energyUsed / CAP);
+        for (int m : fulls) if (role[m] == NONE) tryInsert(m, false, 2);
+    }
     greedyFill(order);
     ll bestValue = curValue;
     vector<Item> bestItems = items;

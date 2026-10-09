@@ -23,3 +23,4 @@ target/
 
 ### Mac ###
 .DS_Store
+__pycache__/
