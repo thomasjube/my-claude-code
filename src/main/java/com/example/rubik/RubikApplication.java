@@ -1,13 +1,13 @@
-package com.example.demo;
+package com.example.rubik;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
-public class DemoApplication {
+public class RubikApplication {
 
 	public static void main(String[] args) {
-		SpringApplication.run(DemoApplication.class, args);
+		SpringApplication.run(RubikApplication.class, args);
 	}
 
 }
