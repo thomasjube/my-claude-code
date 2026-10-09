@@ -38,6 +38,7 @@ static inline int irand(int n) { return (int)(rng() % (unsigned long long)n); }
 // ------------------------------------------------------------------ pools de datasets
 static vector<char> avail;
 struct Pool {
+    ll units = 0;  // volume total disponible
     vector<vector<int>> bk;
     vector<int> cnt;
     vector<uint64_t> bits;
@@ -46,8 +47,8 @@ struct Pool {
         cnt.assign(MAXS + 1, 0);
         bits.assign(MAXS / 64 + 2, 0);
     }
-    inline void inc(int s) { if (cnt[s]++ == 0) bits[s >> 6] |= 1ULL << (s & 63); }
-    inline void dec(int s) { if (--cnt[s] == 0) bits[s >> 6] &= ~(1ULL << (s & 63)); }
+    inline void inc(int s) { units += s; if (cnt[s]++ == 0) bits[s >> 6] |= 1ULL << (s & 63); }
+    inline void dec(int s) { units -= s; if (--cnt[s] == 0) bits[s >> 6] &= ~(1ULL << (s & 63)); }
     int findLE(int x) const {
         if (x < 1) return -1;
         if (x > MAXS) x = MAXS;
@@ -127,6 +128,8 @@ static inline int pickLE(int t, int mode, int x, int &pool) {
 // Remplit un besoin [L, U] de type t. Ajoute les datasets pris à picks. Annule en cas d'échec.
 static bool fillReq(int t, int L, int U, int mode, vector<int> &picks) {
     if (U < L) return false;
+    ll availUnits = pools[t * 2].units + (mode == 1 ? pools[t * 2 + 1].units : 0);
+    if (availUnits < L) return false;
     size_t start = picks.size();
     int got = 0;
     while (true) {
@@ -186,6 +189,9 @@ static vector<char> role, aliasOn;
 static vector<vector<int>> srcList;  // singles par type, triés par coût
 static vector<double> srcKey;
 static vector<int> single;  // type si modèle à besoin unique, -1 sinon
+static vector<int> srcPos;  // position dans srcList[type]
+static int srcPtr[4];       // avant srcPtr[t], toutes les sources de type t sont prises
+static inline void srcFreed(int s) { if (single[s] >= 0 && srcPos[s] >= 0) srcPtr[single[s]] = min(srcPtr[single[s]], srcPos[s]); }
 static double supplyT[4], freeT[4], totalV;
 
 struct Src { int s; int ridx; vector<int> data; };
@@ -219,7 +225,8 @@ static Item removeItem(int idx) {
     if (x.alias) { aliasOn[x.m] = 0; itemOfAlias[x.m] = -1; }
     else { role[x.m] = NONE; itemOfModel[x.m] = -1; }
     for (int d : x.data) dsAdd(d);
-    for (auto &s : x.src) { role[s.s] = NONE; for (int d : s.data) dsAdd(d); }
+    for (auto &s : x.src) { role[s.s] = NONE; srcFreed(s.s); for (int d : s.data) dsAdd(d); }
+    if (!x.alias) srcFreed(x.m);
     energyUsed -= x.energy;
     curValue -= x.value;
     return x;
@@ -235,7 +242,10 @@ static void restoreItem(const Item &x) {
 // trouve une source de type t (hors exclusions), la remplit ; renvoie true si succès
 static bool findSource(int t, int exclude, ll energyLeft, Src &out) {
     int tries = 0;
-    for (int s : srcList[t]) {
+    auto &lst = srcList[t];
+    while (srcPtr[t] < (int)lst.size() && role[lst[srcPtr[t]]] != NONE) srcPtr[t]++;
+    for (int i = srcPtr[t]; i < (int)lst.size(); i++) {
+        int s = lst[i];
         if (role[s] != NONE || s == exclude) continue;
         if (En[s] > energyLeft) continue;
         if (tries++ >= P_srcTries) break;
@@ -310,7 +320,7 @@ static bool tryInsert(int m, bool alias, int mode = 0) {
         return true;
     }
     for (int d : it.data) dsAdd(d);
-    for (auto &s : it.src) { role[s.s] = NONE; for (int d : s.data) dsAdd(d); }
+    for (auto &s : it.src) { role[s.s] = NONE; srcFreed(s.s); for (int d : s.data) dsAdd(d); }
     return false;
 }
 
@@ -514,6 +524,11 @@ int main(int argc, char **argv) {
     }
     for (int t = 0; t < 4; t++)
         sort(srcList[t].begin(), srcList[t].end(), [](int a, int b) { return srcKey[a] < srcKey[b]; });
+    srcPos.assign(NM, -1);
+    for (int t = 0; t < 4; t++) {
+        srcPtr[t] = 0;
+        for (int i = 0; i < (int)srcList[t].size(); i++) srcPos[srcList[t][i]] = i;
+    }
 
     computePriorities();
     auto t0 = chrono::steady_clock::now();
