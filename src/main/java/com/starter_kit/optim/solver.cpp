@@ -617,16 +617,31 @@ int main(int argc, char **argv) {
         ll oldValue = curValue;
         removed.clear();
         // destruction : aléatoire, ou ciblée sur un type de données
-        int mode = irand(3);
+        int mode = irand(4);
         int ty = irand(4);
+        // mode 3 : un candidat non placé de forte priorité est inséré en premier, après avoir
+        // retiré des modèles qui partagent ses types de données
+        int target = -1, tmask = 0;
+        if (mode == 3) {
+            vector<int> top;
+            for (int oi = 0; oi < (int)order.size() && (int)top.size() < 40; oi++) {
+                const Cand &c = cands[order[oi]];
+                bool used = c.alias ? aliasOn[c.m] : role[c.m] != NONE;
+                if (!used) top.push_back(order[oi]);
+            }
+            if (!top.empty()) {
+                target = top[irand(top.size())];
+                for (auto &r : reqs[cands[target].m]) tmask |= 1 << r.t;
+            } else mode = 0;
+        }
         for (int j = 0; j < k && !active.empty(); j++) {
             int pick = -1;
             for (int a = 0; a < 6; a++) {
                 int c = irand(active.size());
                 int m = items[active[c]].m;
                 bool hasT = false;
-                for (auto &r : reqs[m]) hasT |= r.t == ty;
-                if (mode != 1 || hasT) { pick = c; break; }
+                for (auto &r : reqs[m]) hasT |= (mode == 3) ? ((tmask >> r.t) & 1) : r.t == ty;
+                if ((mode != 1 && mode != 3) || hasT) { pick = c; break; }
                 if (pick < 0) pick = c;
             }
             int idx = active[pick];
@@ -651,6 +666,7 @@ int main(int argc, char **argv) {
             int ci = irand(cands.size());
             tryList.push_back({cands[ci].prio * exp(P_noise * 2 * (urand() - 0.5) * 2), ci});
         }
+        if (target >= 0) tryList.push_back({1e300, target});
         sort(tryList.begin(), tryList.end(), [](auto &a, auto &b) { return a.first > b.first; });
         inserted.clear();
         for (auto &p : tryList) {
