@@ -13,7 +13,7 @@ impossible, l'échange est annulé. Les modèles avec sources ne sont pas touch�
 """
 import sys, json, random, time, bisect
 import numpy as np
-import highspy
+
 
 TYPES = "ntic"
 args = dict(a.split("=", 1) for a in sys.argv[4:])
@@ -96,49 +96,43 @@ def try_candidate(c):
     pool = {t: [d for d in range(len(D)) if dT[d] == t and not dC[d] and
                 (owner[d] is None or owner[d] in in_type[t])] for t in types}
     models = sorted(nb_models | {c})
-    h = highspy.Highs(); h.setOptionValue("output_flag", False); h.setOptionValue("time_limit", SUB)
-    cost, rows = [], []
-    Y = {}
-    for m in models:
-        Y[m] = len(cost)
-        cost.append(-(val[m] if (m == c and new) else val[m] - val[m] // 2))
+    from ortools.sat.python import cp_model
+    md = cp_model.CpModel()
+    Y = {m: md.NewBoolVar(f"y{m}") for m in models}
     X = {}
+    by_d = {}
     for gi, (m, t, L, U) in enumerate(groups):
-        row = {}
+        terms = []
         for d in pool[t]:
             if dS[d] <= U:
-                X[d, gi] = len(cost); cost.append(0.0); row[X[d, gi]] = float(dS[d])
-        lo = dict(row); lo[Y[m]] = lo.get(Y[m], 0) - L
-        hi = dict(row); hi[Y[m]] = hi.get(Y[m], 0) - U
-        rows += [(0.0, np.inf, lo), (-np.inf, 0.0, hi)]
-    by_d = {}
-    for (d, gi), v in X.items(): by_d.setdefault(d, []).append(v)
+                v = md.NewBoolVar(""); X[d, gi] = v; terms.append(dS[d] * v)
+                by_d.setdefault(d, []).append(v)
+        md.Add(sum(terms) >= L * Y[m]) if terms else md.Add(Y[m] == 0)
+        if terms:
+            md.Add(sum(terms) <= U * Y[m])
     for vs in by_d.values():
-        if len(vs) > 1: rows.append((-np.inf, 1.0, {v: 1.0 for v in vs}))
-    nc = len(cost)
-    h.addVars(nc, np.zeros(nc), np.ones(nc))
-    h.changeColsCost(nc, np.arange(nc, dtype=np.int32), np.array(cost))
-    h.changeColsIntegrality(nc, np.arange(nc, dtype=np.int32), np.array([highspy.HighsVarType.kInteger] * nc))
-    for lo_, hi_, row in rows:
-        ii = np.array(list(row.keys()), dtype=np.int32)
-        h.addRow(lo_, hi_, len(ii), ii, np.array(list(row.values())))
-    # départ : situation actuelle (candidat absent / moitié)
-    start = np.zeros(nc)
-    for m in nb_models:
-        start[Y[m]] = 1
+        if len(vs) > 1: md.AddAtMostOne(vs)
+    md.Maximize(sum((val[m] if (m == c and new) else val[m] - val[m] // 2) * Y[m] for m in models))
+    for m in nb_models: md.AddHint(Y[m], 1)
+    md.AddHint(Y[c], 0)
     for gi, (m, t, L, U) in enumerate(groups):
         if m == c: continue
-        for d in data_of.get(m, []):
-            if dT[d] == t and (d, gi) in X: start[X[d, gi]] = 1
-    try:
-        hs = highspy.HighsSolution(); hs.col_value = list(start); hs.value_valid = True; h.setSolution(hs)
-    except Exception:
-        pass
-    h.run()
-    if h.getInfo().primal_solution_status != 2:
+        cur = {d for d in data_of.get(m, []) if dT[d] == t}
+        for d in pool[t]:
+            if (d, gi) in X: md.AddHint(X[d, gi], 1 if d in cur else 0)
+    solver = cp_model.CpSolver()
+    solver.parameters.max_time_in_seconds = SUB
+    solver.parameters.num_workers = int(args.get("workers", 4))
+    st = solver.Solve(md)
+    if args.get("debug") == "1":
+        print(f"  cand {c} ({'nouveau' if new else 'moitié'}, v={val[c]}) : {solver.StatusName(st)} obj {solver.ObjectiveValue():.0f} "
+              f"borne {solver.BestObjectiveBound():.0f} actuel {sum(val[m] - val[m] // 2 for m in nb_models):.0f} "
+              f"vars {len(X)}", file=sys.stderr, flush=True)
+    if st not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         return False
-    x = h.getSolution().col_value
-    if x[Y[c]] < 0.5:
+    x = {k: solver.Value(v) for k, v in X.items()}
+    yv = {m: solver.Value(v) for m, v in Y.items()}
+    if not yv[c]:
         return False
     old_val = sum(value_of(m) for m in models if m in trained)
     # nouvelle affectation
@@ -147,13 +141,13 @@ def try_candidate(c):
         for d in [d for d in data_of.get(m, []) if dT[d] == t]:
             owner[d] = None
         data_of[m] = [d for d in data_of.get(m, []) if dT[d] != t]
-    for (d, gi), v in X.items():
-        if x[v] > 0.5:
+    for (d, gi), v in x.items():
+        if v:
             m = groups[gi][0]; owner[d] = m; data_of[m].append(d)
     # rétrogradés : besoins sans données -> non libres ; candidat : autres besoins déjà libres
     ok = True
     for gi, (m, t, L, U) in enumerate(groups):
-        if x[Y[m]] > 0.5: continue
+        if yv[m]: continue
         picks = fill_cop(t, L, U, set())
         if picks is None: ok = False; break
         for d in picks: owner[d] = m; data_of[m].append(d)
