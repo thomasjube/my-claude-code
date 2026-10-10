@@ -23,6 +23,7 @@ NR = int(args.get("nr", 50))
 SUB = float(args.get("sub", 20))
 rng = random.Random(int(args.get("seed", 1)))
 DEBUG = args.get("debug", "0") == "1"
+FULLONLY = args.get("fullonly", "0") == "1"
 
 inst = json.load(open(sys.argv[1]))
 sol = json.load(open(sys.argv[2]))
@@ -82,14 +83,15 @@ def groups_of_type(t):
 def solve_type(t, new_m, new_full):
     """Ré-affectation exacte pour le type t incluant le nouveau groupe. Renvoie {modèle: [datasets]} ou None."""
     L0, U0 = req[new_m][t]
-    gs = [g for g in groups_of_type(t) if g[0] != new_m]
+    gs = [g for g in groups_of_type(t) if g[0] != new_m and (not FULLONLY or g[3])]
     gs.sort(key=lambda g: -(g[4] - g[1]))
     chosen = gs[:NB]
     rest = gs[NB:]
     chosen += rng.sample(rest, min(NR, len(rest)))
     groups = [(new_m, L0, U0, new_full)] + [(g[0], g[1], g[2], g[3]) for g in chosen]
     members = {g[0] for g in chosen} | {new_m}
-    pool = [d for d in range(len(D)) if dT[d] == t and (owner[d] is None or owner[d] in members)]
+    pool = [d for d in range(len(D)) if dT[d] == t and (owner[d] is None or owner[d] in members)
+            and not (FULLONLY and dC[d])]
     h = highspy.Highs()
     h.setOptionValue("output_flag", False)
     h.setOptionValue("time_limit", SUB)
