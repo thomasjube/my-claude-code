@@ -29,7 +29,8 @@ static string P_init, P_out, P_plan;
 static double P_planBoost = 20;
 static int P_aliasFirst = 0;
 static int P_halfCop = 0;
-static int P_tinyU = 1000;  // modèles « moitié » : datasets non libres d'abord exclusivement  // alias placés avant les modèles pleins
+static int P_tinyU = 1000;
+static int P_hugeL = 50000;  // modèles « moitié » : datasets non libres d'abord exclusivement  // alias placés avant les modèles pleins
 static int P_planOrder = 0;  // 0 : gros besoins d'abord ; 1 : petites fenêtres ; 2 : fenêtres étroites ; 3 : aléatoire
 // plan (solution MILP) : rôle prévu et besoins à sourcer
 static vector<char> planFull, planHalf, planSrc, planAlias;
@@ -476,6 +477,7 @@ int main(int argc, char **argv) {
         else if (k == "aliasFirst") P_aliasFirst = stoi(v);
         else if (k == "halfCop") P_halfCop = stoi(v);
         else if (k == "tinyU") P_tinyU = stoi(v);
+        else if (k == "hugeL") P_hugeL = stoi(v);
         else { fprintf(stderr, "option inconnue %s\n", k.c_str()); return 1; }
     }
     rng.seed(P_seed * 7919 + 17);
@@ -569,6 +571,16 @@ int main(int argc, char **argv) {
             if (P_planOrder == 1) sort(v.begin(), v.end(), [&](int a, int b) { return minU(a) < minU(b); });
             else if (P_planOrder == 2) sort(v.begin(), v.end(), [&](int a, int b) { return width(a) < width(b); });
             else if (P_planOrder == 3) shuffle(v.begin(), v.end(), rng);
+            else if (P_planOrder == 5) {
+                // très gros besoins d'abord (besoin décroissant), puis petites fenêtres d'abord
+                auto maxL = [](int m) { int l = 0; for (auto &r : reqs[m]) l = max(l, r.L); return l; };
+                sort(v.begin(), v.end(), [&](int a, int b) {
+                    bool ha = maxL(a) >= P_hugeL, hb = maxL(b) >= P_hugeL;
+                    if (ha != hb) return ha;
+                    if (ha) return need(a) > need(b);
+                    return minU(a) < minU(b);
+                });
+            }
             else if (P_planOrder == 4) {
                 // modèles ayant un besoin minuscule d'abord (par borne haute croissante), puis gros besoins
                 sort(v.begin(), v.end(), [&](int a, int b) {

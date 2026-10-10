@@ -96,7 +96,7 @@ for lo, hi, row in rows:
 if mip_time > 0:
     h.changeColsIntegrality(nc, np.arange(nc, dtype=np.int32), np.array([highspy.HighsVarType.kInteger] * nc))
     h.setOptionValue("time_limit", mip_time)
-    h.setOptionValue("mip_rel_gap", 1e-5)
+    h.setOptionValue("mip_rel_gap", float(opts.get("gap", "1e-5")))
     h.setOptionValue("threads", int(opts.get("threads", "1")))
 h.run()
 sol = h.getSolution().col_value
