@@ -27,6 +27,7 @@ static int P_alias = 0, P_sources = 1, P_seed = 1, P_pairLim = 400, P_srcTries =
 static double P_kmin = 2, P_kmax = 20, P_T0 = -1, P_noise = 0.15;
 static string P_init, P_out, P_plan;
 static double P_planBoost = 20;
+static int P_aliasFirst = 0;  // alias placés avant les modèles pleins
 static int P_planOrder = 0;  // 0 : gros besoins d'abord ; 1 : petites fenêtres ; 2 : fenêtres étroites ; 3 : aléatoire
 // plan (solution MILP) : rôle prévu et besoins à sourcer
 static vector<char> planFull, planHalf, planSrc, planAlias;
@@ -467,6 +468,7 @@ int main(int argc, char **argv) {
         else if (k == "plan") P_plan = v;
         else if (k == "planBoost") P_planBoost = stod(v);
         else if (k == "planOrder") P_planOrder = stoi(v);
+        else if (k == "aliasFirst") P_aliasFirst = stoi(v);
         else { fprintf(stderr, "option inconnue %s\n", k.c_str()); return 1; }
     }
     rng.seed(P_seed * 7919 + 17);
@@ -564,6 +566,7 @@ int main(int argc, char **argv) {
         };
         byNeed(fulls); byNeed(halves);
         int okF = 0, okH = 0, okA = 0;
+        if (P_aliasFirst) for (int m : aliases) okA += tryInsert(m, true, 2);
         for (int m : fulls) {
             bool ok = tryInsert(m, false, 1);
             okF += ok;
@@ -574,7 +577,7 @@ int main(int argc, char **argv) {
             }
         }
         for (int m : halves) okH += tryInsert(m, false, 2);
-        for (int m : aliases) okA += tryInsert(m, true, 2);
+        if (!P_aliasFirst) for (int m : aliases) okA += tryInsert(m, true, 2);
         fprintf(stderr, "plan : pleins %d/%zu, moitiés %d/%zu, alias %d/%zu -> valeur %lld énergie %.4f\n", okF,
                 fulls.size(), okH, halves.size(), okA, aliases.size(), curValue, (double)energyUsed / CAP);
         for (int m : fulls) if (role[m] == NONE) tryInsert(m, false, 2);
