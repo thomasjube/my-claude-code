@@ -87,6 +87,27 @@ for t in range(4):
     rows.append((-inf, 1.0, tot))
     rows.append((-inf, 0.0, src))               # besoins sourcés <= sources disponibles
 
+if opts.get("count", "0") == "1":
+    # nombre de datasets : un groupe de borne basse L utilise au moins nmin(L) datasets
+    # (plus petit k tel que les k plus gros datasets atteignent L)
+    import bisect
+    for t in range(4):
+        cnt = {}
+        for sub, cond in (("all", lambda d: True), ("free", lambda d: not d["isCopyrighted"])):
+            sz = sorted((d["size"] for d in D if TYPES.index(d["dataType"]) == t and cond(d)), reverse=True)
+            pref = [0]
+            for v in sz: pref.append(pref[-1] + v)
+            nmin = lambda l: max(1, bisect.bisect_left(pref, l))
+            row = {}
+            for i, m in enumerate(M):
+                rq = [(TYPES.index(tt), r["lowerBound"], r["upperBound"]) for tt, r in m["dataRequirements"].items()]
+                for k, (tt, l, u) in enumerate(rq):
+                    if tt != t: continue
+                    if i in X: row[X[i]] = row.get(X[i], 0) + nmin(l)
+                    if sub == "all" and (i, k) in Dv: row[Dv[i, k]] = float(nmin(l))
+                if sub == "all" and i in Sv and len(rq) == 1 and rq[0][0] == t:
+                    row[Sv[i]] = float(nmin(rq[0][1]))
+            if row: rows.append((-inf, float(len(sz)), row))
 if opts.get("hall", "0") == "1":
     # contraintes de Hall : un groupe de borne haute U ne peut utiliser que des datasets de taille <= U
     nth = int(opts.get("hallk", "60"))
