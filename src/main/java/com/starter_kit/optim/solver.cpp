@@ -133,7 +133,54 @@ static inline int pickLE(int t, int mode, int x, int &pool) {
 }
 
 // Remplit un besoin [L, U] de type t. Ajoute les datasets pris à picks. Annule en cas d'échec.
+static bool fillGreedy(int t, int L, int U, int mode, vector<int> &picks);
+static int P_dp = 1, P_dpMax = 800, P_dpLNS = 0;
+
+// Dernier recours exact : somme de sous-ensemble (programmation dynamique) sur le stock disponible
+static bool fillDP(int t, int L, int U, int mode, vector<int> &picks) {
+    if (U < L || L <= 0) return false;
+    int lim = min(U, MAXS);
+    vector<int> ids;
+    ++stampc;
+    int poolsList[2], np = 0;
+    if (mode == 0) poolsList[np++] = t * 2;
+    else if (mode == 2) poolsList[np++] = t * 2 + 1;
+    else { poolsList[np++] = t * 2 + 1; poolsList[np++] = t * 2; }
+    for (int pi = 0; pi < np; pi++) {
+        Pool &p = pools[poolsList[pi]];
+        for (int sz = p.findGE(1, lim); sz >= 1; sz = p.findGE(sz + 1, lim)) {
+            for (int id : p.bk[sz])
+                if (avail[id] && stampv[id] != stampc) { stampv[id] = stampc; ids.push_back(id); }
+            if ((int)ids.size() > P_dpMax) return false;
+        }
+    }
+    if (ids.empty() || (double)ids.size() * U > 4e7) return false;
+    vector<int> from(U + 1, -1);
+    vector<char> reach(U + 1, 0);
+    reach[0] = 1;
+    for (int i = 0; i < (int)ids.size(); i++) {
+        int w = dsS[ids[i]];
+        for (int x = U; x >= w; x--)
+            if (!reach[x] && reach[x - w]) { reach[x] = 1; from[x] = i; }
+    }
+    int best = -1;
+    for (int x = L; x <= U; x++) if (reach[x]) { best = x; break; }
+    if (best < 0) return false;
+    for (int x = best; x > 0;) {
+        int i = from[x];
+        dsTake(ids[i]);
+        picks.push_back(ids[i]);
+        x -= dsS[ids[i]];
+    }
+    return true;
+}
+
 static bool fillReq(int t, int L, int U, int mode, vector<int> &picks) {
+    if (fillGreedy(t, L, U, mode, picks)) return true;
+    return P_dp && fillDP(t, L, U, mode, picks);
+}
+
+static bool fillGreedy(int t, int L, int U, int mode, vector<int> &picks) {
     if (U < L) return false;
     ll availUnits = (mode == 2 ? 0 : pools[t * 2].units) + (mode >= 1 ? pools[t * 2 + 1].units : 0);
     if (availUnits < L) return false;
@@ -478,6 +525,9 @@ int main(int argc, char **argv) {
         else if (k == "halfCop") P_halfCop = stoi(v);
         else if (k == "tinyU") P_tinyU = stoi(v);
         else if (k == "hugeL") P_hugeL = stoi(v);
+        else if (k == "dp") P_dp = stoi(v);
+        else if (k == "dpMax") P_dpMax = stoi(v);
+        else if (k == "dpLNS") P_dpLNS = stoi(v);
         else { fprintf(stderr, "option inconnue %s\n", k.c_str()); return 1; }
     }
     rng.seed(P_seed * 7919 + 17);
@@ -613,6 +663,7 @@ int main(int argc, char **argv) {
     greedyFill(order);
     ll bestValue = curValue;
     vector<Item> bestItems = items;
+    if (!P_dpLNS) P_dp = 0;  // le recours exact est réservé à la construction (trop lent en LNS)
     writeSolution(P_out, bestItems);
     fprintf(stderr, "[%.1fs] glouton : valeur %lld énergie %.4f items %zu\n", elapsed(t0), curValue,
             (double)energyUsed / CAP, items.size() - freeSlots.size());
