@@ -27,6 +27,7 @@ static int P_alias = 0, P_sources = 1, P_seed = 1, P_pairLim = 400, P_srcTries =
 static double P_kmin = 2, P_kmax = 20, P_T0 = -1, P_noise = 0.15;
 static string P_init, P_out, P_plan;
 static double P_planBoost = 20;
+static int P_planOrder = 0;  // 0 : gros besoins d'abord ; 1 : petites fenêtres d'abord
 // plan (solution MILP) : rôle prévu et besoins à sourcer
 static vector<char> planFull, planHalf, planSrc, planAlias;
 static vector<vector<char>> planZ;
@@ -465,6 +466,7 @@ int main(int argc, char **argv) {
         else if (k == "init") P_init = v;
         else if (k == "plan") P_plan = v;
         else if (k == "planBoost") P_planBoost = stod(v);
+        else if (k == "planOrder") P_planOrder = stoi(v);
         else { fprintf(stderr, "option inconnue %s\n", k.c_str()); return 1; }
     }
     rng.seed(P_seed * 7919 + 17);
@@ -552,10 +554,22 @@ int main(int argc, char **argv) {
             else if (planHalf[m]) halves.push_back(m);
             if (planAlias[m]) aliases.push_back(m);
         }
-        auto byNeed = [&](vector<int> &v) { sort(v.begin(), v.end(), [&](int a, int b) { return need(a) > need(b); }); };
+        auto minU = [](int m) { int u = INT_MAX; for (auto &r : reqs[m]) u = min(u, r.U); return u; };
+        auto byNeed = [&](vector<int> &v) {
+            if (P_planOrder == 1) sort(v.begin(), v.end(), [&](int a, int b) { return minU(a) < minU(b); });
+            else sort(v.begin(), v.end(), [&](int a, int b) { return need(a) > need(b); });
+        };
         byNeed(fulls); byNeed(halves);
         int okF = 0, okH = 0, okA = 0;
-        for (int m : fulls) okF += tryInsert(m, false, 1);
+        for (int m : fulls) {
+            bool ok = tryInsert(m, false, 1);
+            okF += ok;
+            if (!ok && getenv("DEBUG_PLAN")) {
+                fprintf(stderr, "échec plein %d E=%lld :", m, En[m]);
+                for (auto &r : reqs[m]) fprintf(stderr, " [t%d %d..%d libre=%lld]", r.t, r.L, r.U, pools[r.t * 2].units);
+                fprintf(stderr, " énergie restante %.4f\n", (double)(CAP - energyUsed) / CAP);
+            }
+        }
         for (int m : halves) okH += tryInsert(m, false, 2);
         for (int m : aliases) okA += tryInsert(m, true, 2);
         fprintf(stderr, "plan : pleins %d/%zu, moitiés %d/%zu, alias %d/%zu -> valeur %lld énergie %.4f\n", okF,
