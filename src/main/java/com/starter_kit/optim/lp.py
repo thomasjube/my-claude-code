@@ -126,6 +126,12 @@ if opts.get("forbid"):
             if i in X:
                 cols_ub[X[i]] = 0.0; nfb += 1
     print(f"pleins interdits : {nfb}", file=sys.stderr)
+if float(opts.get("noise", "0")) > 0:
+    # bruit sur les valeurs : plans différents de valeur quasi égale (diversification)
+    import random as _r
+    _rng = _r.Random(int(opts.get("seed", "1")))
+    eps = float(opts["noise"])
+    cols_cost = [c * (1 + eps * _rng.random()) if c != 0 else c for c in cols_cost]
 nc = len(cols_cost)
 h.addVars(nc, np.array(cols_lb), np.array(cols_ub))
 h.changeColsCost(nc, np.arange(nc, dtype=np.int32), np.array(cols_cost))
