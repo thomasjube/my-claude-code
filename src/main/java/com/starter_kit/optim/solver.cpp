@@ -136,24 +136,21 @@ static bool fillReq(int t, int L, int U, int mode, vector<int> &picks) {
         int R = L - got, room = U - got;
         if (R <= 0) return true;
         int pool, s = pickGE(t, mode, R, room, pool);
-        if (s >= 0) { picks.push_back(popSize(pools[pool], s)); return true; }
         bool done = false;
-        if (R <= 2 * MAXS) {
-            // paire (a, b) avec a + b dans [R, room]
+        // finisseur au dépassement minimal : un dataset seul ou une paire (a, b)
+        int bestOver = (s >= 0) ? s - R : INT_MAX, ba = -1, bpa = -1, bb = -1, bpb = -1;
+        if (bestOver > 0 && R <= 2 * MAXS) {
             int a = min(room - 1, MAXS), tries = 0;
             while (tries++ < P_pairLim) {
                 int pa;
                 a = pickLE(t, mode, a, pa);
                 if (a < 1 || 2 * a < R) break;
-                // b <= a, b dans [R - a, room - a]
                 int lo = R - a, hi = min(room - a, a);
                 int pb = -1, b = -1;
                 if (lo <= hi) {
-                    // éviter de prendre deux fois le même dataset si un seul exemplaire de taille a
                     b = pickGE(t, mode, lo, hi, pb);
                     if (b == a && pb == pa && pools[pa].cnt[a] < 2) {
-                        // cherche une autre taille ou l'autre pool
-                        int b2 = (hi >= lo) ? pickGE(t, mode, lo, a - 1, pb) : -1;
+                        int b2 = pickGE(t, mode, lo, a - 1, pb);
                         if (b2 < 0 && mode == 1) {
                             int other = (pa == t * 2) ? t * 2 + 1 : t * 2;
                             if (pools[other].findGE(a, a) == a) { b2 = a; pb = other; }
@@ -161,14 +158,19 @@ static bool fillReq(int t, int L, int U, int mode, vector<int> &picks) {
                         b = b2;
                     }
                 }
-                if (b >= 1) {
-                    picks.push_back(popSize(pools[pa], a));
-                    picks.push_back(popSize(pools[pb], b));
-                    return true;
+                if (b >= 1 && a + b - R < bestOver) {
+                    bestOver = a + b - R; ba = a; bpa = pa; bb = b; bpb = pb;
+                    if (bestOver == 0) break;
                 }
                 a--;
             }
         }
+        if (ba >= 0) {
+            picks.push_back(popSize(pools[bpa], ba));
+            picks.push_back(popSize(pools[bpb], bb));
+            return true;
+        }
+        if (s >= 0) { picks.push_back(popSize(pools[pool], s)); return true; }
         if (!done) {
             int lim = (R > MAXS) ? min(room, MAXS) : R - 1;
             s = pickLE(t, mode, lim, pool);
