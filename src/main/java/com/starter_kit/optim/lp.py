@@ -20,12 +20,19 @@ use_alias = opts.get("alias", "0") == "1"
 mip_time = float(opts.get("mip", "0"))
 dslack = float(opts.get("dslack", "0"))
 freeslack = float(opts.get("freeslack", "0"))
+srcmin = int(opts.get("srcmin", "0"))  # consommation minimale = taille du k-ième plus petit dataset du type
 M, D, cap = inst["models"], inst["datasets"], inst["energyCap"]
 N = len(M)
 S = [0.0] * 4; F = [0.0] * 4
 for d in D:
     t = TYPES.index(d["dataType"]); S[t] += d["size"]
     if not d["isCopyrighted"]: F[t] += d["size"]
+minsz = [0] * 4
+if srcmin > 0:
+    for t in range(4):
+        sizes = sorted(d["size"] for d in D if TYPES.index(d["dataType"]) == t)
+        minsz[t] = sizes[min(srcmin, len(sizes)) - 1]
+cons = lambda t, l: max(l, minsz[t])
 S = [v * (1 - dslack) for v in S]; F = [v * (1 - dslack - freeslack) for v in F]
 
 h = highspy.Highs(); h.setOptionValue("output_flag", False)
@@ -67,13 +74,13 @@ for t in range(4):
         reqs = [(TYPES.index(tt), r["lowerBound"], r["upperBound"]) for tt, r in m["dataRequirements"].items()]
         for k, (tt, l, u) in enumerate(reqs):
             if tt != t: continue
-            if i in X: free[X[i]] = l / F[t] if F[t] else 0; tot[X[i]] = tot.get(X[i], 0) + l / S[t]
-            if (i, k) in Dv: tot[Dv[i, k]] = l / S[t]
+            if i in X: free[X[i]] = cons(t, l) / F[t] if F[t] else 0; tot[X[i]] = tot.get(X[i], 0) + cons(t, l) / S[t]
+            if (i, k) in Dv: tot[Dv[i, k]] = cons(t, l) / S[t]
             src[Zv[i, k]] = 1.0
             if i in A: src[A[i]] = src.get(A[i], 0) + 1.0
         if i in Sv and TYPES.index(next(iter(m["dataRequirements"]))) == t:
             l = next(iter(m["dataRequirements"].values()))["lowerBound"]
-            tot[Sv[i]] = l / S[t]; src[Sv[i]] = -1.0
+            tot[Sv[i]] = cons(t, l) / S[t]; src[Sv[i]] = -1.0
     if F[t]: rows.append((-inf, 1.0, free))
     else:  # aucune donnée libre : pas de modèle plein utilisant ce type
         for c in free: rows.append((-inf, 0.0, {c: 1.0}))
