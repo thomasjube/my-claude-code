@@ -99,6 +99,21 @@ if mip_time > 0:
     h.setOptionValue("mip_rel_gap", float(opts.get("gap", "1e-5")))
     h.setOptionValue("threads", int(opts.get("threads", "1")))
 h.run()
+fixmip = float(opts.get("fixmip", "0"))
+if fixmip > 0 and mip_time == 0:
+    # relaxer puis fixer : on fige les variables déjà entières du LP, MILP sur les fractionnaires
+    lpsol = list(h.getSolution().col_value)
+    nfix = 0
+    for j, v in enumerate(lpsol):
+        if abs(v - 1) < 1e-7 or (opts.get("fixzero", "0") == "1" and abs(v) < 1e-7):
+            h.changeColBounds(j, float(round(v)), float(round(v)))
+            nfix += 1
+    print(f"LP {-h.getInfo().objective_function_value:.1f}, variables figées {nfix}/{nc}", file=sys.stderr)
+    h.changeColsIntegrality(nc, np.arange(nc, dtype=np.int32), np.array([highspy.HighsVarType.kInteger] * nc))
+    h.setOptionValue("time_limit", fixmip)
+    h.setOptionValue("mip_rel_gap", float(opts.get("gap", "0")))
+    h.run()
+    mip_time = fixmip
 sol = h.getSolution().col_value
 bound = -h.getInfo().objective_function_value
 info = h.getInfo()

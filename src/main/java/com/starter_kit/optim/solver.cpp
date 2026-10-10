@@ -155,6 +155,8 @@ static bool fillDP(int t, int L, int U, int mode, vector<int> &picks) {
         }
     }
     if (ids.empty() || (double)ids.size() * U > 4e7) return false;
+    // gros datasets d'abord : les petits restent disponibles comme finisseurs
+    sort(ids.begin(), ids.end(), [](int a, int b) { return dsS[a] > dsS[b]; });
     vector<int> from(U + 1, -1);
     vector<char> reach(U + 1, 0);
     reach[0] = 1;
@@ -175,7 +177,16 @@ static bool fillDP(int t, int L, int U, int mode, vector<int> &picks) {
     return true;
 }
 
+static int P_dpFirst = 0;
 static bool fillReq(int t, int L, int U, int mode, vector<int> &picks) {
+    if (P_dpFirst && P_dp && mode == 0) {
+        static long calls = 0, ok = 0;
+        calls++;
+        bool r = fillDP(t, L, U, mode, picks);
+        ok += r;
+        if (getenv("DEBUG_DP") && (calls % 200 == 0)) fprintf(stderr, "dp %ld/%ld\n", ok, calls);
+        if (r) return true;
+    }
     if (fillGreedy(t, L, U, mode, picks)) return true;
     return P_dp && fillDP(t, L, U, mode, picks);
 }
@@ -545,6 +556,7 @@ int main(int argc, char **argv) {
         else if (k == "dpMax") P_dpMax = stoi(v);
         else if (k == "dpLNS") P_dpLNS = stoi(v);
         else if (k == "preSrc") P_preSrc = stoi(v);
+        else if (k == "dpFirst") P_dpFirst = stoi(v);
         else { fprintf(stderr, "option inconnue %s\n", k.c_str()); return 1; }
     }
     rng.seed(P_seed * 7919 + 17);

@@ -5,12 +5,12 @@ Usage : python3 keep_best.py <instance> <solution.json>   (instance ex. 2_medium
 import sys, os, shutil, fcntl
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, ".."))
-from test_solution import getSolutionScore
+from strict import strict_score
 
 def score(inst, path):
     if not os.path.exists(path):
         return 0
-    s, ok, _ = getSolutionScore(open(path).read(), open(os.path.join(HERE, "..", "datasets", inst + ".json")).read(), False)
+    s, ok, _ = strict_score(open(path).read(), open(os.path.join(HERE, "..", "datasets", inst + ".json")).read())
     return s if ok else 0
 
 inst, cand = sys.argv[1], sys.argv[2]
