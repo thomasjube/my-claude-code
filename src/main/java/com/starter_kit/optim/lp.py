@@ -87,6 +87,45 @@ for t in range(4):
     rows.append((-inf, 1.0, tot))
     rows.append((-inf, 0.0, src))               # besoins sourcés <= sources disponibles
 
+if opts.get("hall", "0") == "1":
+    # contraintes de Hall : un groupe de borne haute U ne peut utiliser que des datasets de taille <= U
+    nth = int(opts.get("hallk", "60"))
+    nh = 0
+    for t in range(4):
+        sizes_all = sorted(d["size"] for d in D if TYPES.index(d["dataType"]) == t)
+        sizes_free = sorted(d["size"] for d in D if TYPES.index(d["dataType"]) == t and not d["isCopyrighted"])
+        qs = sorted({sizes_all[min(len(sizes_all) - 1, int(len(sizes_all) * q / nth))] for q in range(1, nth)})
+        import bisect
+        for b in qs:
+            ca = bisect.bisect_right(sizes_all, b); va = sum(sizes_all[:ca])
+            cf = bisect.bisect_right(sizes_free, b); vf = sum(sizes_free[:cf])
+            cnt_all, vol_all, cnt_free, vol_free = {}, {}, {}, {}
+            for i, m in enumerate(M):
+                rq = [(TYPES.index(tt), r["lowerBound"], r["upperBound"]) for tt, r in m["dataRequirements"].items()]
+                for k, (tt, l, u) in enumerate(rq):
+                    if tt != t or u > b or u < l:
+                        continue
+                    if i in X:
+                        cnt_all[X[i]] = cnt_all.get(X[i], 0) + 1; vol_all[X[i]] = vol_all.get(X[i], 0) + l
+                        cnt_free[X[i]] = cnt_free.get(X[i], 0) + 1; vol_free[X[i]] = vol_free.get(X[i], 0) + l
+                    if (i, k) in Dv:
+                        cnt_all[Dv[i, k]] = 1.0; vol_all[Dv[i, k]] = float(l)
+                if i in Sv and len(rq) == 1 and rq[0][0] == t and rq[0][2] <= b:
+                    cnt_all[Sv[i]] = 1.0; vol_all[Sv[i]] = float(rq[0][1])
+            if cnt_all:
+                rows.append((-inf, float(ca), cnt_all)); rows.append((-inf, float(va), vol_all)); nh += 2
+            if cnt_free:
+                rows.append((-inf, float(cf), cnt_free)); rows.append((-inf, float(vf), vol_free)); nh += 2
+    print(f"contraintes de Hall : {nh}", file=sys.stderr)
+if opts.get("forbid"):
+    # modèles interdits en « plein » (échecs de réalisation observés)
+    nfb = 0
+    for line in open(opts["forbid"]):
+        for tok in line.split():
+            i = int(tok)
+            if i in X:
+                cols_ub[X[i]] = 0.0; nfb += 1
+    print(f"pleins interdits : {nfb}", file=sys.stderr)
 nc = len(cols_cost)
 h.addVars(nc, np.array(cols_lb), np.array(cols_ub))
 h.changeColsCost(nc, np.arange(nc, dtype=np.int32), np.array(cols_cost))
