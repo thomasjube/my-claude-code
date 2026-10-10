@@ -296,7 +296,20 @@ static void restoreItem(const Item &x) {
 }
 
 // trouve une source de type t (hors exclusions), la remplit ; renvoie true si succès
+// sources pré-remplies pendant la construction du plan (option preSrc)
+static vector<vector<pair<int, vector<int>>>> reserved(4);
+static bool reservationActive = false;
+static int P_preSrc = 0;
+
 static bool findSource(int t, int exclude, ll energyLeft, Src &out) {
+    auto &rv = reserved[t];
+    for (int i = (int)rv.size() - 1; i >= 0; i--) {
+        if (rv[i].first == exclude || En[rv[i].first] > energyLeft) continue;
+        out.s = rv[i].first;
+        out.data = std::move(rv[i].second);
+        rv.erase(rv.begin() + i);
+        return true;
+    }
     int tries = 0;
     auto &lst = srcList[t];
     while (srcPtr[t] < (int)lst.size() && role[lst[srcPtr[t]]] != NONE) srcPtr[t]++;
@@ -377,7 +390,10 @@ static bool tryInsert(int m, bool alias, int mode = 0) {
         return true;
     }
     for (int d : it.data) dsAdd(d);
-    for (auto &s : it.src) { role[s.s] = NONE; srcFreed(s.s); for (int d : s.data) dsAdd(d); }
+    for (auto &s : it.src) {
+        if (reservationActive) { reserved[single[s.s]].push_back({s.s, s.data}); continue; }
+        role[s.s] = NONE; srcFreed(s.s); for (int d : s.data) dsAdd(d);
+    }
     return false;
 }
 
@@ -528,6 +544,7 @@ int main(int argc, char **argv) {
         else if (k == "dp") P_dp = stoi(v);
         else if (k == "dpMax") P_dpMax = stoi(v);
         else if (k == "dpLNS") P_dpLNS = stoi(v);
+        else if (k == "preSrc") P_preSrc = stoi(v);
         else { fprintf(stderr, "option inconnue %s\n", k.c_str()); return 1; }
     }
     rng.seed(P_seed * 7919 + 17);
@@ -644,6 +661,24 @@ int main(int argc, char **argv) {
         };
         byNeed(fulls); byNeed(halves);
         int okF = 0, okH = 0, okA = 0;
+        if (P_preSrc) {
+            vector<int> ps;
+            for (int m = 0; m < NM; m++) if (planSrc[m] && single[m] >= 0) ps.push_back(m);
+            sort(ps.begin(), ps.end(), [](int a, int b) { return reqs[a][0].U < reqs[b][0].U; });
+            int okS = 0;
+            for (int m : ps) {
+                vector<int> data;
+                const Req &r = reqs[m][0];
+                if (fillReq(r.t, r.L, r.U, P_preSrc == 2 ? 2 : 1, data) ||
+                    (P_preSrc == 2 && fillReq(r.t, r.L, r.U, 1, data))) {
+                    role[m] = SOURCE;
+                    reserved[r.t].push_back({m, data});
+                    okS++;
+                }
+            }
+            reservationActive = true;
+            fprintf(stderr, "sources pré-remplies : %d/%zu\n", okS, ps.size());
+        }
         if (P_aliasFirst) for (int m : aliases) okA += tryInsert(m, true, 2);
         for (int m : fulls) {
             bool ok = tryInsert(m, false, 1);
@@ -659,6 +694,11 @@ int main(int argc, char **argv) {
         fprintf(stderr, "plan : pleins %d/%zu, moitiés %d/%zu, alias %d/%zu -> valeur %lld énergie %.4f\n", okF,
                 fulls.size(), okH, halves.size(), okA, aliases.size(), curValue, (double)energyUsed / CAP);
         for (int m : fulls) if (role[m] == NONE) tryInsert(m, false, 2);
+        reservationActive = false;
+        for (int t = 0; t < 4; t++) {
+            for (auto &p : reserved[t]) { role[p.first] = NONE; srcFreed(p.first); for (int d : p.second) dsAdd(d); }
+            reserved[t].clear();
+        }
     }
     greedyFill(order);
     ll bestValue = curValue;
