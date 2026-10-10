@@ -103,9 +103,12 @@ fixmip = float(opts.get("fixmip", "0"))
 if fixmip > 0 and mip_time == 0:
     # relaxer puis fixer : on fige les variables déjà entières du LP, MILP sur les fractionnaires
     lpsol = list(h.getSolution().col_value)
+    lpdual = list(h.getSolution().col_dual)
+    tau = float(opts.get("rctau", "inf"))
     nfix = 0
     for j, v in enumerate(lpsol):
-        if abs(v - 1) < 1e-7 or (opts.get("fixzero", "0") == "1" and abs(v) < 1e-7):
+        if abs(v - 1) < 1e-7 or (opts.get("fixzero", "0") == "1" and abs(v) < 1e-7) or \
+                (abs(v) < 1e-7 and lpdual[j] > tau):
             h.changeColBounds(j, float(round(v)), float(round(v)))
             nfix += 1
     print(f"LP {-h.getInfo().objective_function_value:.1f}, variables figées {nfix}/{nc}", file=sys.stderr)
