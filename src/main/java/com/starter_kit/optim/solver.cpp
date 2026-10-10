@@ -27,7 +27,9 @@ static int P_alias = 0, P_sources = 1, P_seed = 1, P_pairLim = 400, P_srcTries =
 static double P_kmin = 2, P_kmax = 20, P_T0 = -1, P_noise = 0.15;
 static string P_init, P_out, P_plan;
 static double P_planBoost = 20;
-static int P_aliasFirst = 0;  // alias placés avant les modèles pleins
+static int P_aliasFirst = 0;
+static int P_halfCop = 0;
+static int P_tinyU = 1000;  // modèles « moitié » : datasets non libres d'abord exclusivement  // alias placés avant les modèles pleins
 static int P_planOrder = 0;  // 0 : gros besoins d'abord ; 1 : petites fenêtres ; 2 : fenêtres étroites ; 3 : aléatoire
 // plan (solution MILP) : rôle prévu et besoins à sourcer
 static vector<char> planFull, planHalf, planSrc, planAlias;
@@ -114,6 +116,7 @@ static inline int popSize(Pool &p, int s) {
 // mode 0 : datasets libres uniquement ; mode 1 : non libres de préférence, puis libres
 static inline int pickGE(int t, int mode, int lo, int hi, int &pool) {
     if (mode == 0) { pool = t * 2; return pools[pool].findGE(lo, hi); }
+    if (mode == 2) { pool = t * 2 + 1; return pools[pool].findGE(lo, hi); }
     int c = pools[t * 2 + 1].findGE(lo, hi);
     if (c >= 0) { pool = t * 2 + 1; return c; }
     pool = t * 2;
@@ -121,6 +124,7 @@ static inline int pickGE(int t, int mode, int lo, int hi, int &pool) {
 }
 static inline int pickLE(int t, int mode, int x, int &pool) {
     if (mode == 0) { pool = t * 2; return pools[pool].findLE(x); }
+    if (mode == 2) { pool = t * 2 + 1; return pools[pool].findLE(x); }
     int c = pools[t * 2 + 1].findLE(x), f = pools[t * 2].findLE(x);
     if (c >= 0 && (f < 0 || c * 10 >= f * 8)) { pool = t * 2 + 1; return c; }
     pool = t * 2;
@@ -130,7 +134,7 @@ static inline int pickLE(int t, int mode, int x, int &pool) {
 // Remplit un besoin [L, U] de type t. Ajoute les datasets pris à picks. Annule en cas d'échec.
 static bool fillReq(int t, int L, int U, int mode, vector<int> &picks) {
     if (U < L) return false;
-    ll availUnits = pools[t * 2].units + (mode == 1 ? pools[t * 2 + 1].units : 0);
+    ll availUnits = (mode == 2 ? 0 : pools[t * 2].units) + (mode >= 1 ? pools[t * 2 + 1].units : 0);
     if (availUnits < L) return false;
     size_t start = picks.size();
     int got = 0;
@@ -308,7 +312,8 @@ static bool tryInsert(int m, bool alias, int mode = 0) {
                     done = true;
                 }
             } else if (feasibleData) {
-                if (fillReq(r.t, r.L, r.U, 1, it.data)) done = true;
+                if (P_halfCop && fillReq(r.t, r.L, r.U, 2, it.data)) done = true;
+                else if (fillReq(r.t, r.L, r.U, 1, it.data)) done = true;
             }
         }
         if (!done) ok = false;
@@ -469,6 +474,8 @@ int main(int argc, char **argv) {
         else if (k == "planBoost") P_planBoost = stod(v);
         else if (k == "planOrder") P_planOrder = stoi(v);
         else if (k == "aliasFirst") P_aliasFirst = stoi(v);
+        else if (k == "halfCop") P_halfCop = stoi(v);
+        else if (k == "tinyU") P_tinyU = stoi(v);
         else { fprintf(stderr, "option inconnue %s\n", k.c_str()); return 1; }
     }
     rng.seed(P_seed * 7919 + 17);
@@ -562,6 +569,15 @@ int main(int argc, char **argv) {
             if (P_planOrder == 1) sort(v.begin(), v.end(), [&](int a, int b) { return minU(a) < minU(b); });
             else if (P_planOrder == 2) sort(v.begin(), v.end(), [&](int a, int b) { return width(a) < width(b); });
             else if (P_planOrder == 3) shuffle(v.begin(), v.end(), rng);
+            else if (P_planOrder == 4) {
+                // modèles ayant un besoin minuscule d'abord (par borne haute croissante), puis gros besoins
+                sort(v.begin(), v.end(), [&](int a, int b) {
+                    bool ta = minU(a) < P_tinyU, tb = minU(b) < P_tinyU;
+                    if (ta != tb) return ta;
+                    if (ta) return minU(a) < minU(b);
+                    return need(a) > need(b);
+                });
+            }
             else sort(v.begin(), v.end(), [&](int a, int b) { return need(a) > need(b); });
         };
         byNeed(fulls); byNeed(halves);
