@@ -27,7 +27,7 @@ static int P_alias = 0, P_sources = 1, P_seed = 1, P_pairLim = 400, P_srcTries =
 static double P_kmin = 2, P_kmax = 20, P_T0 = -1, P_noise = 0.15;
 static string P_init, P_out, P_plan;
 static double P_planBoost = 20;
-static int P_planOrder = 0;  // 0 : gros besoins d'abord ; 1 : petites fenêtres d'abord
+static int P_planOrder = 0;  // 0 : gros besoins d'abord ; 1 : petites fenêtres ; 2 : fenêtres étroites ; 3 : aléatoire
 // plan (solution MILP) : rôle prévu et besoins à sourcer
 static vector<char> planFull, planHalf, planSrc, planAlias;
 static vector<vector<char>> planZ;
@@ -556,7 +556,10 @@ int main(int argc, char **argv) {
         }
         auto minU = [](int m) { int u = INT_MAX; for (auto &r : reqs[m]) u = min(u, r.U); return u; };
         auto byNeed = [&](vector<int> &v) {
+            auto width = [](int m) { int w = INT_MAX; for (auto &r : reqs[m]) w = min(w, r.U - r.L); return w; };
             if (P_planOrder == 1) sort(v.begin(), v.end(), [&](int a, int b) { return minU(a) < minU(b); });
+            else if (P_planOrder == 2) sort(v.begin(), v.end(), [&](int a, int b) { return width(a) < width(b); });
+            else if (P_planOrder == 3) shuffle(v.begin(), v.end(), rng);
             else sort(v.begin(), v.end(), [&](int a, int b) { return need(a) > need(b); });
         };
         byNeed(fulls); byNeed(halves);
