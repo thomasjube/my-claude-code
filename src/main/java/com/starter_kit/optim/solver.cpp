@@ -311,6 +311,8 @@ static void restoreItem(const Item &x) {
 static vector<vector<pair<int, vector<int>>>> reserved(4);
 static bool reservationActive = false;
 static int P_preSrc = 0;
+static vector<int> pendingSrc;
+static int P_strictPlan = 0;  // construction : pas de repli données <-> source hors plan  // sources prévues non remplies en phase « non libre » (preSrc=4)
 
 static bool findSource(int t, int exclude, ll energyLeft, Src &out) {
     auto &rv = reserved[t];
@@ -372,7 +374,8 @@ static bool tryInsert(int m, bool alias, int mode = 0) {
                          (P_sources && srcCostEst[r.t] < dataCost(r.t, r.L));
         if (!alias && feasibleData && !planZ.empty() && (planHalf[m] || planFull[m]) && i < (int)planZ[m].size()) preferSrc = planZ[m][i];
         bool done = false;
-        for (int attempt = 0; attempt < 2 && !done; attempt++) {
+        bool planned = !alias && reservationActive && !planZ.empty() && i < (int)planZ[m].size();
+        for (int attempt = 0; attempt < (planned && P_strictPlan ? 1 : 2) && !done; attempt++) {
             bool useSrc = (attempt == 0) ? preferSrc : !preferSrc;
             if (useSrc) {
                 if (!P_sources && !alias) continue;
@@ -557,6 +560,7 @@ int main(int argc, char **argv) {
         else if (k == "dpLNS") P_dpLNS = stoi(v);
         else if (k == "preSrc") P_preSrc = stoi(v);
         else if (k == "dpFirst") P_dpFirst = stoi(v);
+        else if (k == "strictPlan") P_strictPlan = stoi(v);
         else { fprintf(stderr, "option inconnue %s\n", k.c_str()); return 1; }
     }
     rng.seed(P_seed * 7919 + 17);
@@ -678,10 +682,16 @@ int main(int argc, char **argv) {
             for (int m = 0; m < NM; m++) if (planSrc[m] && single[m] >= 0) ps.push_back(m);
             sort(ps.begin(), ps.end(), [](int a, int b) { return reqs[a][0].U < reqs[b][0].U; });
             int okS = 0;
+            pendingSrc.clear();
             for (int m : ps) {
                 vector<int> data;
                 const Req &r = reqs[m][0];
-                if (fillReq(r.t, r.L, r.U, P_preSrc == 2 ? 2 : 1, data) ||
+                if (P_preSrc == 4) {
+                    if (fillReq(r.t, r.L, r.U, 2, data)) { role[m] = SOURCE; reserved[r.t].push_back({m, data}); okS++; }
+                    else pendingSrc.push_back(m);
+                    continue;
+                }
+                if (fillReq(r.t, r.L, r.U, P_preSrc >= 2 ? 2 : 1, data) ||
                     (P_preSrc == 2 && fillReq(r.t, r.L, r.U, 1, data))) {
                     role[m] = SOURCE;
                     reserved[r.t].push_back({m, data});
@@ -701,7 +711,30 @@ int main(int argc, char **argv) {
                 fprintf(stderr, " énergie restante %.4f\n", (double)(CAP - energyUsed) / CAP);
             }
         }
-        for (int m : halves) okH += tryInsert(m, false, 2);
+        if (P_preSrc == 4) {
+            // après les pleins : les sources restantes peuvent utiliser le libre restant
+            int ok2 = 0;
+            for (int m : pendingSrc) {
+                vector<int> data;
+                const Req &r = reqs[m][0];
+                if (fillReq(r.t, r.L, r.U, 1, data)) { role[m] = SOURCE; reserved[r.t].push_back({m, data}); ok2++; }
+            }
+            fprintf(stderr, "sources complétées après les pleins : %d/%zu\n", ok2, pendingSrc.size());
+        }
+        for (int m : halves) {
+            bool ok = tryInsert(m, false, 2);
+            okH += ok;
+            if (!ok && getenv("DEBUG_PLAN")) {
+                fprintf(stderr, "échec moitié %d :", m);
+                for (int i = 0; i < (int)reqs[m].size(); i++) {
+                    auto &r = reqs[m][i];
+                    bool z = i < (int)planZ[m].size() && planZ[m][i];
+                    fprintf(stderr, " [t%d %d..%d %s libre=%lld nonlibre=%lld réservées=%zu]", r.t, r.L, r.U, z ? "SRC" : "data",
+                            pools[r.t * 2].units, pools[r.t * 2 + 1].units, reserved[r.t].size());
+                }
+                fprintf(stderr, " énergie restante %.4f\n", (double)(CAP - energyUsed) / CAP);
+            }
+        }
         if (!P_aliasFirst) for (int m : aliases) okA += tryInsert(m, true, 2);
         fprintf(stderr, "plan : pleins %d/%zu, moitiés %d/%zu, alias %d/%zu -> valeur %lld énergie %.4f\n", okF,
                 fulls.size(), okH, halves.size(), okA, aliases.size(), curValue, (double)energyUsed / CAP);
