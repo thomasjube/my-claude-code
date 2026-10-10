@@ -370,7 +370,7 @@ static bool tryInsert(int m, bool alias, int mode = 0) {
         bool feasibleData = !alias && r.U >= r.L;
         bool preferSrc = alias || !feasibleData ||
                          (P_sources && srcCostEst[r.t] < dataCost(r.t, r.L));
-        if (!alias && feasibleData && !planZ.empty() && (planHalf[m] || planFull[m])) preferSrc = planZ[m][i];
+        if (!alias && feasibleData && !planZ.empty() && (planHalf[m] || planFull[m]) && i < (int)planZ[m].size()) preferSrc = planZ[m][i];
         bool done = false;
         for (int attempt = 0; attempt < 2 && !done; attempt++) {
             bool useSrc = (attempt == 0) ? preferSrc : !preferSrc;
