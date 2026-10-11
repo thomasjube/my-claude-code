@@ -194,10 +194,10 @@ for lo, hi, row in rows:
     h.addRow(lo, hi, len(idx), idx, val)
 if mip_time > 0:
     h.changeColsIntegrality(nc, np.arange(nc, dtype=np.int32), np.array([highspy.HighsVarType.kInteger] * nc))
-    if opts.get("start"):
+    if opts.get("start") or opts.get("near"):
         # démarrage à chaud : solution réalisée (json) traduite en variables du plan
         import collections
-        st = json.load(open(opts["start"]))
+        st = json.load(open(opts.get("start") or opts["near"]))
         dof = collections.defaultdict(list)
         for d_, m_ in st["dataMappings"]: dof[m_].append(d_)
         srcs = {a for a, _ in st["modelMappings"]}
@@ -215,6 +215,15 @@ if mip_time > 0:
                     elif (i, k) in Dv: x0[Dv[i, k]] = 1
         for a in srcs:
             if a in Sv: x0[Sv[a]] = 1
+        if opts.get("near"):
+            # ramification locale : au plus nearK changements de rôle (x, y, s) par rapport à la solution
+            kk = float(opts.get("nearK", "20"))
+            cols = [c for dct in (X, Y, Sv) for c in dct.values()]
+            n1 = sum(1 for c in cols if x0[c] > .5)
+            idx = np.array(cols, dtype=np.int32)
+            coef = np.array([-1.0 if x0[c] > .5 else 1.0 for c in cols])
+            h.addRow(-highspy.kHighsInf, kk - n1, len(idx), idx, coef)
+            print(f"voisinage : {int(kk)} changements, {n1} rôles actifs", file=sys.stderr)
         sol0 = highspy.HighsSolution(); sol0.col_value = list(x0); sol0.value_valid = True
         print(f"démarrage à chaud : valeur {-float(np.dot(cols_cost, x0)):.0f}", file=sys.stderr)
         h.setSolution(sol0)
