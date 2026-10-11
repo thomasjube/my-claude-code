@@ -194,6 +194,30 @@ for lo, hi, row in rows:
     h.addRow(lo, hi, len(idx), idx, val)
 if mip_time > 0:
     h.changeColsIntegrality(nc, np.arange(nc, dtype=np.int32), np.array([highspy.HighsVarType.kInteger] * nc))
+    if opts.get("start"):
+        # démarrage à chaud : solution réalisée (json) traduite en variables du plan
+        import collections
+        st = json.load(open(opts["start"]))
+        dof = collections.defaultdict(list)
+        for d_, m_ in st["dataMappings"]: dof[m_].append(d_)
+        srcs = {a for a, _ in st["modelMappings"]}
+        tsrc = collections.defaultdict(set)
+        for a, b in st["modelMappings"]: tsrc[b].add(next(iter(M[a]["dataRequirements"])))
+        x0 = np.zeros(nc)
+        for i in (set(dof) | set(tsrc)) - srcs:
+            reqs_i = list(M[i]["dataRequirements"])
+            full_i = i not in tsrc and all(not D[d_]["isCopyrighted"] for d_ in dof[i])
+            if full_i and i in X: x0[X[i]] = 1
+            else:
+                x0[Y[i]] = 1
+                for k, tt in enumerate(reqs_i):
+                    if tt in tsrc[i]: x0[Zv[i, k]] = 1
+                    elif (i, k) in Dv: x0[Dv[i, k]] = 1
+        for a in srcs:
+            if a in Sv: x0[Sv[a]] = 1
+        sol0 = highspy.HighsSolution(); sol0.col_value = list(x0); sol0.value_valid = True
+        print(f"démarrage à chaud : valeur {-float(np.dot(cols_cost, x0)):.0f}", file=sys.stderr)
+        h.setSolution(sol0)
     h.setOptionValue("time_limit", mip_time)
     h.setOptionValue("mip_rel_gap", float(opts.get("gap", "1e-5")))
     h.setOptionValue("threads", int(opts.get("threads", "1")))
