@@ -32,7 +32,8 @@ static int P_halfCop = 0;
 static int P_tinyU = 1000;
 static int P_tinyL = 0;
 static double P_ordNoise = 0;
-static double P_swapNoise = 0;  // probabilité d'échange de voisins dans l'ordre de réalisation  // bruit multiplicatif sur l'ordre de réalisation (planOrder=8)      // planOrder=6 : modèles ayant un besoin de borne basse < tinyL d'abord
+static double P_swapNoise = 0;
+static string P_preSrcFile;  // probabilité d'échange de voisins dans l'ordre de réalisation  // bruit multiplicatif sur l'ordre de réalisation (planOrder=8)      // planOrder=6 : modèles ayant un besoin de borne basse < tinyL d'abord
 static int P_hugeL = 50000;  // modèles « moitié » : datasets non libres d'abord exclusivement  // alias placés avant les modèles pleins
 static int P_planOrder = 0;  // 0 : gros besoins d'abord ; 1 : petites fenêtres ; 2 : fenêtres étroites ; 3 : aléatoire
 // plan (solution MILP) : rôle prévu et besoins à sourcer
@@ -561,6 +562,7 @@ int main(int argc, char **argv) {
         else if (k == "tinyL") P_tinyL = stoi(v);
         else if (k == "ordNoise") P_ordNoise = stod(v);
         else if (k == "swapNoise") P_swapNoise = stod(v);
+        else if (k == "preSrcFile") P_preSrcFile = v;
         else if (k == "dp") P_dp = stoi(v);
         else if (k == "dpMax") P_dpMax = stoi(v);
         else if (k == "dpLNS") P_dpLNS = stoi(v);
@@ -722,7 +724,21 @@ int main(int argc, char **argv) {
                 for (int rep = 0; rep < 3; rep++)
                     for (int i = 0; i + 1 < (int)vv->size(); i++) if (urand() < P_swapNoise) swap((*vv)[i], (*vv)[i + 1]);
         int okF = 0, okH = 0, okA = 0;
-        if (P_preSrc) {
+        if (!P_preSrcFile.empty()) {
+            // sources pré-affectées (fichier : « S modèle d1 d2 ... »)
+            ifstream in(P_preSrcFile); string line; int okS = 0;
+            while (getline(in, line)) {
+                istringstream ls(line); string tag; int m; if (!(ls >> tag >> m) || tag != "S") continue;
+                vector<int> data; int d; while (ls >> d) data.push_back(d);
+                bool ok = single[m] >= 0 && role[m] == NONE;
+                for (int x : data) ok = ok && avail[x];
+                if (!ok) continue;
+                for (int x : data) dsTake(x);
+                role[m] = SOURCE; reserved[single[m]].push_back({m, data}); okS++;
+            }
+            reservationActive = true;
+            fprintf(stderr, "sources chargées : %d\n", okS);
+        } else if (P_preSrc) {
             vector<int> ps;
             for (int m = 0; m < NM; m++) if (planSrc[m] && single[m] >= 0) ps.push_back(m);
             sort(ps.begin(), ps.end(), [](int a, int b) { return reqs[a][0].U < reqs[b][0].U; });
