@@ -87,6 +87,39 @@ for t in range(4):
     rows.append((-inf, 1.0, tot))
     rows.append((-inf, 0.0, src))               # besoins sourcés <= sources disponibles
 
+if opts.get("vk", "0") in ("1", "2"):
+    # coupes convexes nombre/volume : n groupes consomment au moins les n plus petits datasets, d'où pour tout k
+    # somme_g max(L_g, s_k) <= V_tot - V(k) + k s_k  (s trié croissant, V(k) = somme des k plus petits)
+    nvk = 0
+    for t in range(4):
+        for sub in ("all", "free"):
+            sz = sorted(d["size"] for d in D if TYPES.index(d["dataType"]) == t and (sub == "all" or not d["isCopyrighted"]))
+            if not sz: continue
+            Vt = sum(sz) * (1 - dslack - (freeslack if sub == "free" else 0))
+            pref = [0]
+            for v in sz: pref.append(pref[-1] + v)
+            # vk=2 : un groupe de borne L utilise au moins nmin(L) datasets (les plus gros atteignent L)
+            import bisect
+            desc = [0]
+            for v in reversed(sz): desc.append(desc[-1] + v)
+            nmin = (lambda l: max(1, bisect.bisect_left(desc, l))) if opts.get("vk") == "2" else (lambda l: 1)
+            ks = sorted({k for k in [1, 2, 3, 5, 8, 12, 20, 30, 50, 80, 120, 200, 300, 500, 800, 1200, 2000, 3000, 5000, 8000, 12000, 20000] if k <= len(sz)})
+            for k in ks:
+                sk = sz[k - 1]; rhs = Vt - pref[k] + k * sk
+                row = {}
+                for i, m in enumerate(M):
+                    rq = [(TYPES.index(tt), r["lowerBound"], r["upperBound"]) for tt, r in m["dataRequirements"].items()]
+                    for kk, (tt, l, u) in enumerate(rq):
+                        if tt != t: continue
+                        c = float(max(l, nmin(l) * sk))
+                        if i in X: row[X[i]] = row.get(X[i], 0) + c
+                        if sub == "all" and (i, kk) in Dv: row[Dv[i, kk]] = c
+                    if sub == "all" and i in Sv and len(rq) == 1 and rq[0][0] == t:
+                        row[Sv[i]] = float(max(rq[0][1], nmin(rq[0][1]) * sk))
+                if row:
+                    sc = 1.0 / rhs
+                    rows.append((-inf, 1.0, {c: v * sc for c, v in row.items()})); nvk += 1
+    print(f"coupes nombre/volume : {nvk}", file=sys.stderr)
 if opts.get("count", "0") == "1":
     # nombre de datasets : un groupe de borne basse L utilise au moins nmin(L) datasets
     # (plus petit k tel que les k plus gros datasets atteignent L)
