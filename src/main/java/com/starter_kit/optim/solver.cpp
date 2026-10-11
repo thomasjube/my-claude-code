@@ -33,7 +33,8 @@ static int P_tinyU = 1000;
 static int P_tinyL = 0;
 static double P_ordNoise = 0;
 static double P_swapNoise = 0;
-static string P_preSrcFile;  // probabilité d'échange de voisins dans l'ordre de réalisation  // bruit multiplicatif sur l'ordre de réalisation (planOrder=8)      // planOrder=6 : modèles ayant un besoin de borne basse < tinyL d'abord
+static string P_preSrcFile, P_first;
+static unordered_set<int> firstSet;  // probabilité d'échange de voisins dans l'ordre de réalisation  // bruit multiplicatif sur l'ordre de réalisation (planOrder=8)      // planOrder=6 : modèles ayant un besoin de borne basse < tinyL d'abord
 static int P_hugeL = 50000;  // modèles « moitié » : datasets non libres d'abord exclusivement  // alias placés avant les modèles pleins
 static int P_planOrder = 0;  // 0 : gros besoins d'abord ; 1 : petites fenêtres ; 2 : fenêtres étroites ; 3 : aléatoire
 // plan (solution MILP) : rôle prévu et besoins à sourcer
@@ -563,6 +564,7 @@ int main(int argc, char **argv) {
         else if (k == "ordNoise") P_ordNoise = stod(v);
         else if (k == "swapNoise") P_swapNoise = stod(v);
         else if (k == "preSrcFile") P_preSrcFile = v;
+        else if (k == "first") P_first = v;
         else if (k == "dp") P_dp = stoi(v);
         else if (k == "dpMax") P_dpMax = stoi(v);
         else if (k == "dpLNS") P_dpLNS = stoi(v);
@@ -719,6 +721,13 @@ int main(int argc, char **argv) {
             else sort(v.begin(), v.end(), [&](int a, int b) { return need(a) > need(b); });
         };
         byNeed(fulls); byNeed(halves);
+        if (!P_first.empty()) {
+            // modèles à traiter en premier (échecs d'une réalisation précédente)
+            unordered_set<int> fs; { ifstream in(P_first); int x; while (in >> x) fs.insert(x); }
+            for (auto *vv : {&fulls, &halves})
+                stable_partition(vv->begin(), vv->end(), [&](int m) { return fs.count(m) > 0; });
+            firstSet = fs;
+        }
         if (P_swapNoise > 0)  // perturbation de l'ordre : échanges aléatoires de voisins
             for (auto *vv : {&fulls, &halves})
                 for (int rep = 0; rep < 3; rep++)
@@ -742,6 +751,10 @@ int main(int argc, char **argv) {
             vector<int> ps;
             for (int m = 0; m < NM; m++) if (planSrc[m] && single[m] >= 0) ps.push_back(m);
             sort(ps.begin(), ps.end(), [](int a, int b) { return reqs[a][0].U < reqs[b][0].U; });
+            if (!P_first.empty()) {
+                unordered_set<int> fs; { ifstream in(P_first); int x; while (in >> x) fs.insert(x); }
+                stable_partition(ps.begin(), ps.end(), [&](int m) { return fs.count(m) > 0; });
+            }
             int okS = 0;
             pendingSrc.clear();
             for (int m : ps) {
@@ -757,7 +770,7 @@ int main(int argc, char **argv) {
                     role[m] = SOURCE;
                     reserved[r.t].push_back({m, data});
                     okS++;
-                }
+                } else if (getenv("DEBUG_PLAN")) fprintf(stderr, "échec source %d\n", m);
             }
             reservationActive = true;
             fprintf(stderr, "sources pré-remplies : %d/%zu\n", okS, ps.size());
