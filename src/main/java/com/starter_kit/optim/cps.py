@@ -17,6 +17,7 @@ TLIM = float(args.get("time", 500)); K = int(args.get("k", 30)); NCAND = int(arg
 SUB = float(args.get("sub", 10)); WORKERS = int(args.get("workers", 4)); UNUSED = int(args.get("unused", 400))
 rng = random.Random(int(args.get("seed", 1))); MODE = int(args.get("mode", 0))
 FOCUS = [int(x) for x in args["focus"].split(",")] if args.get("focus") else []
+WITH = [int(x) for x in args["with"].split(",")] if args.get("with") else []
 inst = json.load(open(sys.argv[1])); sol = json.load(open(sys.argv[2])); OUT = sys.argv[3]
 M, D, CAP = inst["models"], inst["datasets"], inst["energyCap"]
 N = len(M)
@@ -88,8 +89,8 @@ def iteration():
         # voisinage focalisé : un modèle cible (non entraîné) et les modèles partageant ses types
         f = rng.choice([m for m in FOCUS if m not in role] or FOCUS)
         types = set(req[f])
-        piv = [m for m in movable if set(req[m]) & types]
-        Nn = rng.sample(piv, min(K, len(piv)))
+        piv = [m for m in movable if set(req[m]) & types and m not in WITH]
+        Nn = [m for m in WITH if m in role and role[m] != 'X'] + rng.sample(piv, min(K, len(piv)))
         for m in Nn: types |= set(req[m])
         c3 = [m for m in by_src[:6000] if free_m(m) and set(req[m]) <= types][:400]
         c2 = [m for m in by_tgt[:4000] if free_m(m) and set(req[m]) <= types][:300]
