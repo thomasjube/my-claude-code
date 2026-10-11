@@ -656,6 +656,17 @@ int main(int argc, char **argv) {
             if (P_planOrder == 1) sort(v.begin(), v.end(), [&](int a, int b) { return minU(a) < minU(b); });
             else if (P_planOrder == 2) sort(v.begin(), v.end(), [&](int a, int b) { return width(a) < width(b); });
             else if (P_planOrder == 3) shuffle(v.begin(), v.end(), rng);
+            else if (P_planOrder == 7) sort(v.begin(), v.end(), [&](int a, int b) { return val[a] > val[b]; });
+            else if (P_planOrder == 8) {
+                // petits besoins d'abord (borne basse < tinyL), puis valeur décroissante
+                auto minL = [](int m) { int l = INT_MAX; for (auto &r : reqs[m]) l = min(l, r.L); return l; };
+                sort(v.begin(), v.end(), [&](int a, int b) {
+                    bool ta = minL(a) < P_tinyL, tb = minL(b) < P_tinyL;
+                    if (ta != tb) return ta;
+                    if (ta) return minL(a) < minL(b);
+                    return val[a] > val[b];
+                });
+            }
             else if (P_planOrder == 5 || P_planOrder == 6) {
                 // très gros besoins d'abord (besoin décroissant), puis petites fenêtres d'abord
                 // (6 : les modèles à besoin minuscule passent avant tout, par borne basse croissante)
