@@ -31,7 +31,8 @@ static int P_aliasFirst = 0;
 static int P_halfCop = 0;
 static int P_tinyU = 1000;
 static int P_tinyL = 0;
-static double P_ordNoise = 0;  // bruit multiplicatif sur l'ordre de réalisation (planOrder=8)      // planOrder=6 : modèles ayant un besoin de borne basse < tinyL d'abord
+static double P_ordNoise = 0;
+static double P_swapNoise = 0;  // probabilité d'échange de voisins dans l'ordre de réalisation  // bruit multiplicatif sur l'ordre de réalisation (planOrder=8)      // planOrder=6 : modèles ayant un besoin de borne basse < tinyL d'abord
 static int P_hugeL = 50000;  // modèles « moitié » : datasets non libres d'abord exclusivement  // alias placés avant les modèles pleins
 static int P_planOrder = 0;  // 0 : gros besoins d'abord ; 1 : petites fenêtres ; 2 : fenêtres étroites ; 3 : aléatoire
 // plan (solution MILP) : rôle prévu et besoins à sourcer
@@ -559,6 +560,7 @@ int main(int argc, char **argv) {
         else if (k == "hugeL") P_hugeL = stoi(v);
         else if (k == "tinyL") P_tinyL = stoi(v);
         else if (k == "ordNoise") P_ordNoise = stod(v);
+        else if (k == "swapNoise") P_swapNoise = stod(v);
         else if (k == "dp") P_dp = stoi(v);
         else if (k == "dpMax") P_dpMax = stoi(v);
         else if (k == "dpLNS") P_dpLNS = stoi(v);
@@ -700,6 +702,10 @@ int main(int argc, char **argv) {
             else sort(v.begin(), v.end(), [&](int a, int b) { return need(a) > need(b); });
         };
         byNeed(fulls); byNeed(halves);
+        if (P_swapNoise > 0)  // perturbation de l'ordre : échanges aléatoires de voisins
+            for (auto *vv : {&fulls, &halves})
+                for (int rep = 0; rep < 3; rep++)
+                    for (int i = 0; i + 1 < (int)vv->size(); i++) if (urand() < P_swapNoise) swap((*vv)[i], (*vv)[i + 1]);
         int okF = 0, okH = 0, okA = 0;
         if (P_preSrc) {
             vector<int> ps;
