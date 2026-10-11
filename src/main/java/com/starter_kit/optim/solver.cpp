@@ -661,6 +661,21 @@ int main(int argc, char **argv) {
             else if (P_planOrder == 2) sort(v.begin(), v.end(), [&](int a, int b) { return width(a) < width(b); });
             else if (P_planOrder == 3) shuffle(v.begin(), v.end(), rng);
             else if (P_planOrder == 7) sort(v.begin(), v.end(), [&](int a, int b) { return val[a] > val[b]; });
+            else if (P_planOrder == 9) {
+                // petites bornes hautes d'abord (minU < tinyU, U croissant), puis petits besoins, puis valeur décroissante
+                auto minL = [](int m) { int l = INT_MAX; for (auto &r : reqs[m]) l = min(l, r.L); return l; };
+                unordered_map<int, double> key;
+                for (int m : v) key[m] = val[m] * (1 + P_ordNoise * urand());
+                sort(v.begin(), v.end(), [&](int a, int b) {
+                    bool ua = minU(a) < P_tinyU, ub = minU(b) < P_tinyU;
+                    if (ua != ub) return ua;
+                    if (ua) return minU(a) < minU(b);
+                    bool ta = minL(a) < P_tinyL, tb = minL(b) < P_tinyL;
+                    if (ta != tb) return ta;
+                    if (ta) return minL(a) < minL(b);
+                    return key[a] > key[b];
+                });
+            }
             else if (P_planOrder == 8) {
                 // petits besoins d'abord (borne basse < tinyL), puis valeur décroissante (bruitée : ordNoise)
                 auto minL = [](int m) { int l = INT_MAX; for (auto &r : reqs[m]) l = min(l, r.L); return l; };
