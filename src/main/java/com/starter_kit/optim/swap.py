@@ -169,6 +169,8 @@ halves = [m for m in trained if not is_full(m) and m not in sourced]
 untrained = [m for m in range(N) if m not in trained and m not in sources and all(U >= L for L, U in req[m].values())
              and En[m] <= CAP - energy]
 cands = sorted(halves, key=lambda m: -val[m])[:NC] + sorted(untrained, key=lambda m: -val[m])[:NC // 4]
+if args.get("only"):
+    cands = [int(x) for x in args["only"].split(",")]
 print(f"candidats : {len(cands)} (moitiés {len(halves)}, non entraînés tenant dans l'énergie {len(untrained)})",
       file=sys.stderr)
 acc = 0
