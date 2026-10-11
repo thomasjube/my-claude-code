@@ -87,6 +87,30 @@ for t in range(4):
     rows.append((-inf, 1.0, tot))
     rows.append((-inf, 0.0, src))               # besoins sourcés <= sources disponibles
 
+if opts.get("copsrc"):
+    # sources sur données non libres (heuristique) : coupes nombre/volume sur les tailles non libres,
+    # marge f, plus le reliquat libre attendu (freeslack)
+    fcs = float(opts["copsrc"])
+    for t in range(4):
+        sz = sorted(d["size"] for d in D if TYPES.index(d["dataType"]) == t and d["isCopyrighted"])
+        fsum = sum(d["size"] for d in D if TYPES.index(d["dataType"]) == t and not d["isCopyrighted"])
+        Vt = sum(sz) * (1 - fcs) + fsum * freeslack
+        pref = [0]
+        for v in sz: pref.append(pref[-1] + v)
+        for k in [1, 5, 20, 50, 100, 200, 300, 400, 500, 700]:
+            if k > len(sz): continue
+            sk = sz[k - 1]; rhs = Vt - pref[k] + k * sk
+            row = {}
+            for i in Sv:
+                rq = M[i]["dataRequirements"]; tt = next(iter(rq))
+                if TYPES.index(tt) == t: row[Sv[i]] = max(rq[tt]["lowerBound"], sk) / rhs
+            rows.append((-inf, 1.0, row))
+if opts.get("srccap"):
+    # plafond du nombre de sources par type (capacité exacte mesurée par srcpack)
+    caps = [int(c) for c in opts["srccap"].split(",")]
+    for t in range(4):
+        row = {Sv[i]: 1.0 for i in Sv if TYPES.index(next(iter(M[i]["dataRequirements"]))) == t}
+        rows.append((-inf, float(caps[t]), row))
 if opts.get("vk", "0") in ("1", "2"):
     # coupes convexes nombre/volume : n groupes consomment au moins les n plus petits datasets, d'où pour tout k
     # somme_g max(L_g, s_k) <= V_tot - V(k) + k s_k  (s trié croissant, V(k) = somme des k plus petits)
