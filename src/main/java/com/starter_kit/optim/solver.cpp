@@ -30,7 +30,8 @@ static double P_planBoost = 20;
 static int P_aliasFirst = 0;
 static int P_halfCop = 0;
 static int P_tinyU = 1000;
-static int P_tinyL = 0;      // planOrder=6 : modèles ayant un besoin de borne basse < tinyL d'abord
+static int P_tinyL = 0;
+static double P_ordNoise = 0;  // bruit multiplicatif sur l'ordre de réalisation (planOrder=8)      // planOrder=6 : modèles ayant un besoin de borne basse < tinyL d'abord
 static int P_hugeL = 50000;  // modèles « moitié » : datasets non libres d'abord exclusivement  // alias placés avant les modèles pleins
 static int P_planOrder = 0;  // 0 : gros besoins d'abord ; 1 : petites fenêtres ; 2 : fenêtres étroites ; 3 : aléatoire
 // plan (solution MILP) : rôle prévu et besoins à sourcer
@@ -557,6 +558,7 @@ int main(int argc, char **argv) {
         else if (k == "tinyU") P_tinyU = stoi(v);
         else if (k == "hugeL") P_hugeL = stoi(v);
         else if (k == "tinyL") P_tinyL = stoi(v);
+        else if (k == "ordNoise") P_ordNoise = stod(v);
         else if (k == "dp") P_dp = stoi(v);
         else if (k == "dpMax") P_dpMax = stoi(v);
         else if (k == "dpLNS") P_dpLNS = stoi(v);
@@ -658,13 +660,15 @@ int main(int argc, char **argv) {
             else if (P_planOrder == 3) shuffle(v.begin(), v.end(), rng);
             else if (P_planOrder == 7) sort(v.begin(), v.end(), [&](int a, int b) { return val[a] > val[b]; });
             else if (P_planOrder == 8) {
-                // petits besoins d'abord (borne basse < tinyL), puis valeur décroissante
+                // petits besoins d'abord (borne basse < tinyL), puis valeur décroissante (bruitée : ordNoise)
                 auto minL = [](int m) { int l = INT_MAX; for (auto &r : reqs[m]) l = min(l, r.L); return l; };
+                unordered_map<int, double> key;
+                for (int m : v) key[m] = val[m] * (1 + P_ordNoise * urand());
                 sort(v.begin(), v.end(), [&](int a, int b) {
                     bool ta = minL(a) < P_tinyL, tb = minL(b) < P_tinyL;
                     if (ta != tb) return ta;
                     if (ta) return minL(a) < minL(b);
-                    return val[a] > val[b];
+                    return key[a] > key[b];
                 });
             }
             else if (P_planOrder == 5 || P_planOrder == 6) {
